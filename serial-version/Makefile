@@ -1,6 +1,13 @@
 CC = g++
-CFLAGS = -Wall -Wextra
-OPENCV = `pkg-config --cflags --libs opencv4`
+CFLAGS = -Wall -Wextra `pkg-config --cflags opencv4`
+LDFLAGS = `pkg-config --libs opencv4`
 
-a.out: ./src/main.cpp
-	$(CC) $(CFLAGS) ./src/main.cpp  $(OPENCV)
+
+video.out: ./build/main.o ./build/filters.o
+	$(CC) $(CFLAGS) ./build/main.o ./build/filters.o $(LDFLAGS) -o video.out
+./build/main.o: ./src/main.cpp
+	mkdir -p ./build
+	$(CC) $(CFLAGS) -c ./src/main.cpp -o ./build/main.o
+./build/filters.o: ./src/filters.cpp
+	mkdir -p ./build
+	$(CC) $(CFLAGS) -c ./src/filters.cpp -o ./build/filters.o
