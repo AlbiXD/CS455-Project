@@ -1,39 +1,55 @@
 #include <opencv2/opencv.hpp>
 #include <stdio.h>
 #include <unistd.h>
+#include <ostream>
+
+using namespace std;
 
 int main()
 {
 
-    cv::VideoCapture cap("./demo.mp4");
+	while (1)
+	{
+		string input_path;
+		string choice;
 
-    if (!cap.isOpened())
-    {
-        printf("Could not open video file\n");
-        return -1;
-    }
+		cout << "Please enter path for the video: ";
+		cin >> input_path;
 
-    cv::Mat frame;
+		cv::VideoCapture cap(input_path);
 
-    bool ret;
+		if (!cap.isOpened())
+		{
+			printf("Could not open video file\n");
+			return -1;
+		}
 
-    while ((ret = cap.read(frame)))
-    {
-        if (ret)
-        {
-            // Display the frame using imshow
-            cv::imshow("First Frame", frame);
-            cv::waitKey(0);          // Wait for a key press to close the window
-            cv::destroyAllWindows(); // Close the window
-        }
-        else
-        {
-            std::cout << "Error: Could not read the frame." << std::endl;
-        }
-    }
-    // Release the video capture object
-    cap.release();
-    return 0;
+		cout << "Apply Filter\n1) \tGrayscale \n2) \tBlur Effect\n";
+		cin >> choice;
 
-    return 0;
+		cv::Mat frame;
+
+		bool ret;
+
+		while ((ret = cap.read(frame)))
+		{
+			if (ret)
+			{
+				// Display the frame using imshow
+				cv::imshow("First Frame", frame);
+				cv::waitKey(0);			 // Wait for a key press to close the window
+				cv::destroyAllWindows(); // Close the window
+			}
+			else
+			{
+				std::cout << "Error: Could not read the frame." << std::endl;
+			}
+		}
+		// Release the video capture object
+		cap.release();
+
+		return 0;
+	}
+
+	return 0;
 }
