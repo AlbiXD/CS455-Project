@@ -45,11 +45,15 @@ int main()
 	switch(choice){
 		case 1:
 			cout << "Applying Grayscale...\n";
-			apply_grayscale(cap, out);	
+			apply_grayscale(cap, out);
+			break;
+		case 2:
+			cout << "Applying Blur...\n";
+			apply_blur(cap, out);
 			break;
 		case 3:
 			cout << "Applying Inverting Filter...\n";
-			apply_invert(cap, out);	
+			apply_invert(cap, out);
 			break;
 		default:
 			printf("Invalid Option");

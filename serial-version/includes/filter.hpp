@@ -9,6 +9,7 @@ int apply_invert(cv::VideoCapture cap, cv::VideoWriter out);
 
 int apply_grayscale(cv::VideoCapture cap, cv::VideoWriter out);
 
+int apply_blur(cv::VideoCapture cap, cv::VideoWriter out);
 
 
 #endif
