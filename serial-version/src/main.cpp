@@ -36,10 +36,9 @@ int main()
 	int width = (int)cap.get(CAP_PROP_FRAME_WIDTH);
 	int height = (int)cap.get(CAP_PROP_FRAME_HEIGHT);
 	double fps = cap.get(CAP_PROP_FPS);
-	int fourcc = VideoWriter::fourcc('a', 'v', 'c', '1');
-
-
-	cv::VideoWriter out(output_path += "/" + output_filename, fourcc, fps, Size(width, height));
+	std::string pipeline = "appsrc ! videoconvert ! x264enc bitrate=2000 speed-preset=ultrafast "
+	"! mp4mux ! filesink location=" + output_path + "/" + output_filename;
+	cv::VideoWriter out(pipeline, cv::CAP_GSTREAMER, 0, fps, cv::Size(width, height), true);
 
 	time_t start_time = time(NULL);
 	switch(choice){
