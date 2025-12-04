@@ -1,5 +1,5 @@
 MPICC = mpic++
-CFLAGS = -O0 -Wall -Wextra `pkg-config --cflags opencv4`
+CFLAGS = `pkg-config --cflags opencv4`
 LDFLAGS = `pkg-config --libs opencv4`
 
 # Define the output binary name
