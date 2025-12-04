@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     time_t start_time = time(NULL);
 
     std::string input = "demo.mp4";
-    std::string output = "out.mp4";
+    std::string output = "out.avi";
 
     MPI_Init(&argc, &argv);
     int rank, num_process, my_work = 0, frame_width = 0, frame_height = 0;
@@ -59,7 +59,7 @@ int main(int argc, char **argv)
         my_work = frame_height / num_process;
         totalFrames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
 
-        int fourcc = VideoWriter::fourcc('m', 'p', '4', 'v');
+        int fourcc = VideoWriter::fourcc('M', 'J', 'P', 'G');
         double fps = cap.get(CAP_PROP_FPS);
         writer.open(output, fourcc, fps, Size(frame_width, frame_height), true);
 
