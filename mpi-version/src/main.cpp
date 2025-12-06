@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include "../includes/filter.hpp"
 #include <string.h>
+#include "../includes/filter_cuda.hpp"
 #define NODES 2
 
 
@@ -47,7 +48,7 @@ int main(int argc, char **argv)
 		std::string output_file = "";
 		std::cout << "Please enter output name (include extension): ";
 		std::cin >> output_file;
-
+		
 		output_path = "../output-videos/" + output_file;
 
 		std::cout << "Apply Filter\n1) \tGrayscale \n2) \tBlur Effect\n3) \tInvert Filter\n4) \tEdge Detection\n";
@@ -64,7 +65,7 @@ int main(int argc, char **argv)
 
 	}
 
-
+	
 	VideoCapture cap;
 
 	if ((num_procs) % NODES != 0)
@@ -89,8 +90,9 @@ int main(int argc, char **argv)
 	MPI_Bcast(&file_size, 1, MPI_LONG, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&choice, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&totalFrames, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&cuda_Flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-
+	
 	MPI_Bcast(input_path, 64, MPI_CHAR, 0, MPI_COMM_WORLD);
 
 
@@ -126,7 +128,9 @@ int main(int argc, char **argv)
 	cap.set(CAP_PROP_POS_FRAMES, start);
 	int frame_width = cap.get(CAP_PROP_FRAME_WIDTH);
 	int frame_height = cap.get(CAP_PROP_FRAME_HEIGHT);
-	unsigned char * pixels = (unsigned char *) malloc(frame_width * frame_height * 3);
+	//Size is the number of values- to get it in bytes is more
+	int size = frame_width * frame_height * 3;
+	unsigned char * pixels = (unsigned char *) malloc(size);
 
 	Mat frame;
 	VideoWriter writer;
@@ -137,29 +141,27 @@ int main(int argc, char **argv)
 
 
 	//We need to alloc outside the loop
-	//cudaMalloc(&d_frame, frame_width * frame_height *3);
+	//unsigned char* d_frame;
+	//size_t size;
+	//if(cuda_Flag){
+		//cudaMalloc(&d_frame, frame_width * frame_height *3);
 
+	//}else{
 	for(int i = start; i < end; i++){
 
 		if(!cap.read(frame)){
 			break;
 		}
-
+//std::cout << "frame.step: " << frame.step
+//         << " expected: " << frame_width * 3 << std::endl;
 		memcpy(pixels, frame.data, frame_width * frame_height * 3);
 
 
-		/*Apply filter is the serial version*/
-		if(cuda_Flag){/*
-
-
-
-			c
-			cudaMalloc(&d_frame, frame_width * frame_height * 3);
-
-// Inside your loop:
-cudaMemcpy(d_frame, frame.data, size, cudaMemcpyHostToDevice);
-process_frame_cuda(choice, d_frame, frame_width, frame_height);
-cudaMemcpy(pixels, d_frame, size, cudaMemcpyDeviceToHost);*/
+		/*Apply filter is the serial version, so we do the cuda for the cuda flag*/
+		if(cuda_Flag){
+			//printf("before CUDA: %d %d %d\n", pixels[0], pixels[1], pixels[2]);
+			process_frame_cuda(choice, pixels, frame_width, frame_height);
+			//printf("After CUDA: %d %d %d\n", pixels[0], pixels[1], pixels[2]);
 		}
 		else{
 			if(apply_filter(choice, pixels, frame_width, frame_height) < -1) exit(-1);
