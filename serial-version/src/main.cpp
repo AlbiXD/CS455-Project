@@ -16,6 +16,8 @@ int main()
 
 	cout << "Please enter path for the video: ";
 	cin >> input_path;
+	//input_path = "../input-videos/greyscale.mp4";
+	cout << input_path << endl;
 
 	cout << "Please enter video name for the output: ";
 	cin >> output_filename;
@@ -29,7 +31,7 @@ int main()
 	}
 	int choice;
 
-	cout << "Apply Filter\n1) \tGrayscale \n2) \tBlur Effect\n3) \tInvert Filter\n";
+	cout << "Apply Filter\n1) \tGrayscale \n2) \tBlur Effect\n3) \tInvert Filter\n4) \tEdge Detection\n";
 	cout << "Choose a filter: ";
 	cin >> choice;
 
@@ -53,6 +55,11 @@ int main()
 		case 3:
 			cout << "Applying Inverting Filter...\n";
 			apply_invert(cap, out);
+			break;
+
+		case 4:
+			cout << "Applying Edge Detection Filter...\n";
+			apply_edge(cap, out);
 			break;
 		default:
 			printf("Invalid Option");
