@@ -23,7 +23,7 @@ int main(int argc, char **argv)
 
 	MPI_Init(&argc, &argv);
 
-	int rank, num_procs, totalFrames = 0, my_frames = 0, remainder = 0, choice = 0;
+	int rank, num_procs, totalFrames = 0, my_frames = 0, remainder = 0, choice = 0, cuda_Flag = 0;
 	char input_path[64];
 	std::string output_path = "";
 	MPI_Status status;
@@ -47,15 +47,24 @@ int main(int argc, char **argv)
 		std::string output_file = "";
 		std::cout << "Please enter output name (include extension): ";
 		std::cin >> output_file;
-		
+
 		output_path = "../output-videos/" + output_file;
 
 		std::cout << "Apply Filter\n1) \tGrayscale \n2) \tBlur Effect\n3) \tInvert Filter\n4) \tEdge Detection\n";
 		std::cout << "Choose a filter: ";
 		std::cin >> choice;
+		std::cout << "Do you want to use CUDA? ";
+		std::string cuda_Choice = "";
+		std::cin >> cuda_Choice;
+		if("yes" == cuda_Choice){
+			cuda_Flag = 1;
+		}
+		if(cuda_Flag){std::cout << "You are using CUDA!" << std::endl;}
+		else{std::cout << "You are NOT using CUDA :(" << std::endl;}
+
 	}
 
-	
+
 	VideoCapture cap;
 
 	if ((num_procs) % NODES != 0)
@@ -81,7 +90,7 @@ int main(int argc, char **argv)
 	MPI_Bcast(&choice, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&totalFrames, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-	
+
 	MPI_Bcast(input_path, 64, MPI_CHAR, 0, MPI_COMM_WORLD);
 
 
@@ -127,6 +136,9 @@ int main(int argc, char **argv)
 	writer.open(part, fourcc, fps, Size(frame_width, frame_height), true);
 
 
+	//We need to alloc outside the loop
+	//cudaMalloc(&d_frame, frame_width * frame_height *3);
+
 	for(int i = start; i < end; i++){
 
 		if(!cap.read(frame)){
@@ -134,7 +146,26 @@ int main(int argc, char **argv)
 		}
 
 		memcpy(pixels, frame.data, frame_width * frame_height * 3);
-		if(apply_filter(choice, pixels, frame_width, frame_height) < -1) exit(-1);
+
+
+		/*Apply filter is the serial version*/
+		if(cuda_Flag){/*
+
+
+
+			c
+			cudaMalloc(&d_frame, frame_width * frame_height * 3);
+
+// Inside your loop:
+cudaMemcpy(d_frame, frame.data, size, cudaMemcpyHostToDevice);
+process_frame_cuda(choice, d_frame, frame_width, frame_height);
+cudaMemcpy(pixels, d_frame, size, cudaMemcpyDeviceToHost);*/
+		}
+		else{
+			if(apply_filter(choice, pixels, frame_width, frame_height) < -1) exit(-1);
+
+		}
+
 		Mat processed_frame(frame_height, frame_width, CV_8UC3, pixels);
 		writer.write(processed_frame);
 	}
@@ -150,7 +181,7 @@ int main(int argc, char **argv)
 	//All ranks send to rank buffer
 
 	unsigned char * raw_part = NULL;
-	if(rank % 2 != 0){
+	if(rank != 0){
 		f = fopen(part.c_str(), "rb");
 		fseek(f, 0, SEEK_END);
 		file_size = ftell(f);
@@ -158,20 +189,20 @@ int main(int argc, char **argv)
 		fseek(f, 0, SEEK_SET);
 		raw_part = (unsigned char*) malloc(file_size);
 		int r = fread(raw_part, 1, file_size, f);
-		printf("Successfully read %d\n", r);	
+		printf("Successfully read %d\n", r);
 		MPI_Send(&file_size, 1, MPI_LONG, 0, 3, MPI_COMM_WORLD);
 		MPI_Send(raw_part, file_size, MPI_UNSIGNED_CHAR, 0, 4, MPI_COMM_WORLD);
 	}
 
 	long other_size = 0;
 	if(rank == 0){
-		for(int i = 1; i < num_procs; i+=2){
+		for(int i = 1; i < num_procs; i++){
 			MPI_Recv(&other_size, 1, MPI_LONG, i, 3, MPI_COMM_WORLD, &status);
 			printf("Recieved total file size for Rank %d\n", i);
-			raw_part = (unsigned char *) malloc(other_size);			
+			raw_part = (unsigned char *) malloc(other_size);
 			MPI_Recv(raw_part, other_size, MPI_UNSIGNED_CHAR, i, 4, MPI_COMM_WORLD, &status);
 			printf("Recieved in buffer for Rank %d\n", i);
-			std::string output = "part_" + std::to_string(i) + ".mp4"; 
+			std::string output = "part_" + std::to_string(i) + ".mp4";
 			FILE *out = fopen(output.c_str(), "wb");
 			fwrite(raw_part, 1, other_size, out);
 			fclose(out);
@@ -185,7 +216,7 @@ int main(int argc, char **argv)
 		FILE* l = fopen("lists.txt", "w");
 		fprintf(l, "ffconcat version 1.0\n");
 		for(int i = 0; i < num_procs; i++){
-			fprintf(l, "file 'part_%d.mp4'\n", i);
+			fprintf(l, "file 'part_%d.mp4'\n", i);///home/gpgpup/project/CS455-Project/mpi-version/
 
 		}
 		fclose(l);
@@ -214,12 +245,12 @@ int main(int argc, char **argv)
 	}
 
 	char path[64];
-
+/*
 	if(rank == 0){
 		remove("lists.txt");
 		for(int i = 0; i < num_procs; i++){
-			sprintf(path, "part_%d.mp4", i);	
-			remove(path);		
+			sprintf(path, "part_%d.mp4", i);
+			remove(path);
 
 		}
 	}
@@ -232,7 +263,7 @@ int main(int argc, char **argv)
 			}
 
 		}
-	}
+	}*/
 
 
 
