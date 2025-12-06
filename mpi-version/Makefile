@@ -1,5 +1,5 @@
 MPICC = mpic++
-CFLAGS = `pkg-config --cflags opencv4`
+CFLAGS = -O3 `pkg-config --cflags opencv4`
 LDFLAGS = `pkg-config --libs opencv4`
 
 OUTPUT = my_program

@@ -120,47 +120,43 @@ int apply_edge(unsigned char *my_frame, int frame_width, int frame_height)
     int sumR, sumG, sumB;
     int rX, rY, gX, gY, bX, bY, edgeXH, edgeYH;
 
-    for (int i = 1; i < frame_width - 1; i++)
-    {
-        for (int j = 1; j < frame_height - 1; j++)
-        {
-            rX = rY = 0;
-            gX = gY = 0;
-            bX = bY = 0;
+for (int y = 1; y < frame_height - 1; ++y) {
+    for (int x = 1; x < frame_width - 1; ++x) {
 
-            for (int fx = -1; fx <= 1; fx++)
-            {
-                for (int fy = -1; fy <= 1; fy++)
-                {
-                    int nx = i + fx;
-                    int ny = j + fy;
+        rX = rY = 0;
 
-                    int nindex = (nx * frame_height + ny) * bytes_per_pixel;
+        for (int fx = -1; fx <= 1; ++fx) {
+            for (int fy = -1; fy <= 1; ++fy) {
 
-                    unsigned char b = original[nindex];
-                    unsigned char g = original[nindex + 1];
-                    unsigned char r = original[nindex + 2];
+                int nx = x + fx;
+                int ny = y + fy;
 
-                    edgeXH = edgeX[fx + 1][fy + 1];
-                    edgeYH = edgeY[fx + 1][fy + 1];
+                int nindex = (ny * frame_width + nx) * bytes_per_pixel;
+                //           ^^^      ^^^^^^^^^
+                //           row      width
 
-                    bX += b * edgeXH; bY += b * edgeYH;
-                    gX += g * edgeXH; gY += g * edgeYH;
-                    rX += r * edgeXH; rY += r * edgeYH;
-                }
+                unsigned char b = original[nindex + 0];
+                unsigned char g = original[nindex + 1];
+                unsigned char r = original[nindex + 2];
+
+                int edgeXH = edgeX[fx+1][fy+1];
+                int edgeYH = edgeY[fx+1][fy+1];
+
+                rX += r * edgeXH;
+                rY += r * edgeYH;
             }
-
-            sumR = static_cast<int>(std::sqrt(rX * rX + rY * rY));
-            sumG = static_cast<int>(std::sqrt(gX * gX + gY * gY));
-            sumB = static_cast<int>(std::sqrt(bX * bX + bY * bY));
-
-            int idx = (i * frame_height + j) * bytes_per_pixel;
-
-            my_frame[idx]     = cv::saturate_cast<uchar>(sumB);
-            my_frame[idx + 1] = cv::saturate_cast<uchar>(sumG);
-            my_frame[idx + 2] = cv::saturate_cast<uchar>(sumR);
         }
+
+        int mag = (int)std::sqrt(rX*rX + rY*rY);
+        unsigned char v = cv::saturate_cast<uchar>(mag * 0.25f);
+
+        int idx = (y * frame_width + x) * bytes_per_pixel;
+        my_frame[idx+0] = v;
+        my_frame[idx+1] = v;
+        my_frame[idx+2] = v;
     }
+}
+
 
     return 0;
 }
@@ -169,20 +165,16 @@ int apply_filter(int choice, unsigned char *my_frame, int frame_width, int frame
 
 	switch(choice){
 		case 1:
-			cout << "Applying Grayscale...\n";
 			apply_grayscale(my_frame, frame_width, frame_height);
 			break;
 		case 2:
-			cout << "Applying Blur...\n";
 			apply_blur(my_frame, frame_width, frame_height);
 			break;
 		case 3:
-			cout << "Applying Inverting Filter...\n";
 			apply_invert(my_frame, frame_width, frame_height);
 			break;
 
 		case 4:
-			cout << "Applying Edge Detection Filter...\n";
 			apply_grayscale(my_frame, frame_width, frame_height);
 			apply_edge(my_frame, frame_width, frame_height);
 			break;
