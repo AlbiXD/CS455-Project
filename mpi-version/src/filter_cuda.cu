@@ -14,7 +14,12 @@ __global__ void kernel_process(unsigned char* frame, int width, int height) {
     }
 }
 
-void process_frame_cuda(int choice, unsigned char* pixels_input, int width, int height) {
+float process_frame_cuda(int choice, unsigned char* pixels_input, unsigned char *pixels_device, int width, int height, cudaStream_t *stream) {
+    //Timing
+    cudaEvent_t ev_start, ev_stop;
+    cudaEventCreate(&ev_start);
+    cudaEventCreate(&ev_stop);
+
     int bx_dim, by_dim, gx_dim, gy_dim;
 
     bx_dim = by_dim = 4;
@@ -24,26 +29,46 @@ void process_frame_cuda(int choice, unsigned char* pixels_input, int width, int 
     dim3 threads(bx_dim, by_dim);
     dim3 grid(gx_dim, gy_dim);
 
-    unsigned char * pixels_device;
+
     int size = width*height*3*sizeof(unsigned char);
-    cudaMalloc(reinterpret_cast<void**>(&pixels_device), size);
+    //cudaMalloc(reinterpret_cast<void**>(&pixels_device), size);
+    cudaEventRecord(ev_start, *stream);
 
     //Host->Device
-    cudaMemcpy(pixels_device, pixels_input, size, cudaMemcpyHostToDevice);
+    //cudaMemcpy(pixels_device, pixels_input, size, cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(pixels_device, pixels_input, size, cudaMemcpyHostToDevice, *stream);
 
     //Kernel
-    kernel_process<<<grid, threads>>>(pixels_device, width, height);
+    kernel_process<<<grid, threads, 0, *stream>>>(pixels_device, width, height);
     cudaError_t launchErr = cudaGetLastError();
     //if (launchErr != cudaSuccess) {std::cout << "I HATE YOUUU " << std::endl;}
     //Device->Host
-    cudaMemcpy(pixels_input, pixels_device, size, cudaMemcpyDeviceToHost);
+    //cudaMemcpy(pixels_input, pixels_device, size, cudaMemcpyDeviceToHost);
+    cudaMemcpyAsync(pixels_input, pixels_device, size, cudaMemcpyDeviceToHost, *stream);
+
     // Wait for GPU to finish
-    cudaError_t err = cudaDeviceSynchronize();
+    /*cudaError_t err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
         std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-    }
+    }*/
 
-    cudaFree(pixels_device);
+    //cudaFree(pixels_device);
+
+        //cudaMemcpyAsync(host_in, dev_buf, frame_bytes, cudaMemcpyDeviceToHost, stream);
+
+    // record stop
+    cudaEventRecord(ev_stop, *stream);
+
+    // wait for event to complete
+    cudaEventSynchronize(ev_stop);
+
+    float ms = 0.0f;
+    cudaEventElapsedTime(&ms, ev_start, ev_stop);
+
+    cudaEventDestroy(ev_start);
+    cudaEventDestroy(ev_stop);
+
+    return ms; // milliseconds
 }
 
 /*
@@ -113,10 +138,10 @@ void process_frame_batch_cuda(unsigned char* d_frames, int width, int height, in
 
     kernel_process_batch<<<grid, threads>>>(d_frames, width, height, batch_size);
 
-    cudaError_t err = cudaDeviceSynchronize();
+    /*cudaError_t err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
         printf("[CUDA ERROR] %s\n", cudaGetErrorString(err));
-    }
+    }*/
 }
 
 

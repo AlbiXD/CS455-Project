@@ -7,7 +7,7 @@
 #include <cmath>
 #include <cuda_runtime.h>
 #include <opencv2/core.hpp>
-void process_frame_cuda(int choice, unsigned char* pixels_input, int width, int height);
+float process_frame_cuda(int choice, unsigned char* pixels_input, unsigned char *pixels_device, int width, int height, cudaStream_t *stream);
 void process_video_cuda(int rank, int choice, int width, int height, int start, int end);
-void process_frame_batch_cuda(unsigned char* d_frames, int width, int height, int batch_size);
+//void process_frame_batch_cuda(unsigned char* d_frames, int width, int height, int batch_size);
 #endif
