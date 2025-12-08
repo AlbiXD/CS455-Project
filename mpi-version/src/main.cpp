@@ -30,11 +30,13 @@ int main(int argc, char **argv)
 	MPI_Status status;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-
+//printf("HELLO FROM BUILD %s %s, rank %d\n", __DATE__, __TIME__, rank);
+fflush(stdout);
 	std::string part = "part_" + std::to_string(rank) + ".mp4";
 	FILE *f = NULL;
 	unsigned char *buf = NULL;
 	long file_size = 0;
+
 
 	if(rank == 0){
 
@@ -81,9 +83,10 @@ int main(int argc, char **argv)
 		f = fopen(input_path, "rb");
 		fseek(f, 0, SEEK_END);
 		file_size = ftell(f);
-		//printf("filesize = %ld\n", file_size);
+		printf("filesize = %ld\n", file_size);
 		fseek(f, 0, SEEK_SET);
 	}
+
 
 	// Broadcast File Size
 	MPI_Bcast(&file_size, 1, MPI_LONG, 0, MPI_COMM_WORLD);
@@ -100,29 +103,37 @@ int main(int argc, char **argv)
 	int end = (rank == num_procs - 1)  ? totalFrames : start + frames_per_rank;
 
 	buf = (unsigned char *)malloc(file_size);
-	//printf("filesize = %ld, Rank %d\n", file_size, rank);
+	printf("filesize = %ld, Rank %d\n", file_size, rank);
+
+	MPI_Barrier(MPI_COMM_WORLD);
 
 	if (rank == 0)
 	{
 		start_time = time(NULL);
 		int r = fread(buf, 1, file_size, f);
-		//printf("Successfully read %d\n", r);
-		//printf("Frames: %d\n", totalFrames);
-		MPI_Send(buf, file_size, MPI_UNSIGNED_CHAR, 1, 123, MPI_COMM_WORLD);
-	}
+		printf("Successfully read %d\n", r);
+		printf("Frames: %d\n", totalFrames);
+		MPI_Send(buf, file_size, MPI_UNSIGNED_CHAR, 1, 5, MPI_COMM_WORLD);
 
+		printf("Rank 0: after sending\n");
+		fflush(stdout);
+	}
+	
 	if (rank == 1)
 	{
-		MPI_Recv(buf, file_size, MPI_UNSIGNED_CHAR, 0, 123, MPI_COMM_WORLD, &status);
+		printf("Im here\n");
+		MPI_Recv(buf, file_size, MPI_UNSIGNED_CHAR, 0, 5, MPI_COMM_WORLD, &status);
 		FILE *out = fopen(input_path, "wb");
 		fwrite(buf, 1, file_size, out);
+		printf("Rank 1 Successfully recieved file\n");
 		fclose(out);
 
 	}
 
+	//printf("Stuck Here %d\n", rank);
 	MPI_Barrier(MPI_COMM_WORLD);
 
-	//printf("Video Recieved all processes ready to go\n");
+	printf("Video Recieved all processes ready to go\n");
 
 	cap.open(input_path);
 	cap.set(CAP_PROP_POS_FRAMES, start);
@@ -130,8 +141,7 @@ int main(int argc, char **argv)
 	int frame_height = cap.get(CAP_PROP_FRAME_HEIGHT);
 	//Size is the number of values- to get it in bytes is more
 	int size = frame_width * frame_height * 3;
-	//unsigned char * pixels = (unsigned char *) malloc(size);
-	//unsigned char * pixels_device;// = (unsigned char *) malloc(size);
+
 	Mat frame;
 	VideoWriter writer;
 	int fourcc = VideoWriter::fourcc('m', 'p', '4', 'v');
@@ -144,22 +154,20 @@ int main(int argc, char **argv)
 	//unsigned char* d_frame;
 	//size_t size;
 
-	unsigned char * pixels[2];
-	unsigned char * pixels_device[2];
+	unsigned char* pixels[2];
+	unsigned char* pixels_device[2];
+	unsigned char* pixels_output[2];
 	cudaStream_t streams[2];
 	unsigned char *pixels_serial;
-	if(cuda_Flag){
-		//We allocate the device memory outside the loop
-		for(int i = 0; i < 2; i++){
-			cudaMallocHost(&pixels[i], size);
-			cudaMalloc(&pixels_device[i], size);
+	if (cuda_Flag){
+		for (int i = 0; i < 2; i++) {
+			cudaMallocHost(&pixels[i], size);          // pinned host
+			cudaMalloc(&pixels_device[i], size);    // device input
+			cudaMalloc(&pixels_output[i], size);   // device output
 			cudaStreamCreate(&streams[i]);
-
 		}
-
-	}
-	else{
-		 pixels_serial = (unsigned char *) malloc(size);
+	} else {
+		pixels_serial = (unsigned char*) malloc(size);
 	}
 	int buffer_index = 0;
 	int next_buffer = 0;
@@ -175,10 +183,18 @@ int main(int argc, char **argv)
 		for (int i = start; i < end; i++) {
 			Mat frame;
 			if (!cap.read(frame)) break;
-
+			printf("Rank: %d\n", rank);
 			memcpy(pixels[buffer_index], frame.data, size);
+			time_device += process_frame_cuda(
+				choice,
+				pixels[buffer_index],
+				pixels_device[buffer_index],
+				pixels_output[buffer_index],
+				frame_width,
+				frame_height,
+				&streams[buffer_index]
+			);
 
-			time_device += process_frame_cuda(choice, pixels[buffer_index], pixels_device[buffer_index], frame_width, frame_height,&streams[buffer_index]);
 			next_buffer = 1 - buffer_index;
 
 			if (i > start) {
@@ -193,10 +209,10 @@ int main(int argc, char **argv)
 		cudaStreamSynchronize(streams[1 - buffer_index]);
 		Mat processed_frame(frame_height, frame_width, CV_8UC3, pixels[1 - buffer_index]);
 		writer.write(processed_frame);
-
 		for (int i = 0; i < 2; i++) {
 			cudaFreeHost(pixels[i]);
 			cudaFree(pixels_device[i]);
+			//cudaFree(pixels_device_out[i]);
 			cudaStreamDestroy(streams[i]);
 		}
 	}
@@ -235,7 +251,7 @@ int main(int argc, char **argv)
 	//All ranks send to rank buffer
 
 	unsigned char * raw_part = NULL;
-	if(rank != 0){
+	if(rank % 2 != 0){
 		f = fopen(part.c_str(), "rb");
 		fseek(f, 0, SEEK_END);
 		file_size = ftell(f);
@@ -250,7 +266,7 @@ int main(int argc, char **argv)
 
 	long other_size = 0;
 	if(rank == 0){
-		for(int i = 1; i < num_procs; i++){
+		for(int i = 1; i < num_procs; i+= 2){
 			MPI_Recv(&other_size, 1, MPI_LONG, i, 3, MPI_COMM_WORLD, &status);
 			//printf("Recieved total file size for Rank %d\n", i);
 			raw_part = (unsigned char *) malloc(other_size);
@@ -299,7 +315,7 @@ int main(int argc, char **argv)
 	}
 
 	char path[64];
-/*
+
 	if(rank == 0){
 		remove("lists.txt");
 		for(int i = 0; i < num_procs; i++){
@@ -317,8 +333,7 @@ int main(int argc, char **argv)
 			}
 
 		}
-	}*/
-
+	}
 
 
 	MPI_Finalize();
