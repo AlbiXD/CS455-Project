@@ -215,7 +215,7 @@ float process_frame_cuda(int choice, unsigned char* pixels_input, unsigned char 
     }
     else if(choice == 2){
         //RADIUS is 1
-        cuda_blur<<<grid, threads, 0, *stream>>>(pixels_device, pixels_output,width, height, 1);
+        cuda_blur<<<grid, threads, 0, *stream>>>(pixels_device, pixels_output,width, height, 5);
         cudaMemcpyAsync(pixels_input, pixels_output, size, cudaMemcpyDeviceToHost, *stream);
 
     }

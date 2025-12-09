@@ -10,14 +10,17 @@ using namespace cv;
 int main()
 {
 
-	string input_path;
+	char input_path[64];
 	string output_path = "../output-videos";
 	string output_filename;
 
-	cout << "Please enter path for the video: ";
-	cin >> input_path;
-	//input_path = "../input-videos/greyscale.mp4";
-	cout << input_path << endl;
+	std::string input_file = "";
+	std::cout << "Please enter input name (include extension): ";
+	std::string test = "";
+	std::cin >> input_file;
+	test = "../input-videos/" + input_file;
+	strcpy(input_path, test.c_str());
+
 
 	cout << "Please enter video name for the output: ";
 	cin >> output_filename;
@@ -39,31 +42,33 @@ int main()
 	int height = (int)cap.get(CAP_PROP_FRAME_HEIGHT);
 	double fps = cap.get(CAP_PROP_FPS);
 	std::string pipeline = "appsrc ! videoconvert ! x264enc bitrate=2000 speed-preset=ultrafast "
-	"! mp4mux ! filesink location=" + output_path + "/" + output_filename;
+						   "! mp4mux ! filesink location=" +
+						   output_path + "/" + output_filename;
 	cv::VideoWriter out(pipeline, cv::CAP_GSTREAMER, 0, fps, cv::Size(width, height), true);
 
 	time_t start_time = time(NULL);
-	switch(choice){
-		case 1:
-			cout << "Applying Grayscale...\n";
-			apply_grayscale(cap, out);
-			break;
-		case 2:
-			cout << "Applying Blur...\n";
-			apply_blur(cap, out);
-			break;
-		case 3:
-			cout << "Applying Inverting Filter...\n";
-			apply_invert(cap, out);
-			break;
+	switch (choice)
+	{
+	case 1:
+		cout << "Applying Grayscale...\n";
+		apply_grayscale(cap, out);
+		break;
+	case 2:
+		cout << "Applying Blur...\n";
+		apply_blur(cap, out);
+		break;
+	case 3:
+		cout << "Applying Inverting Filter...\n";
+		apply_invert(cap, out);
+		break;
 
-		case 4:
-			cout << "Applying Edge Detection Filter...\n";
-			apply_edge(cap, out);
-			break;
-		default:
-			printf("Invalid Option");
-			break;
+	case 4:
+		cout << "Applying Edge Detection Filter...\n";
+		apply_edge(cap, out);
+		break;
+	default:
+		printf("Invalid Option");
+		break;
 	}
 
 	// Release the video capture object
