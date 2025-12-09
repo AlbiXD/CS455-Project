@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include "../includes/filter.hpp"
 #include <string.h>
+#include "../includes/filter_cuda.hpp"
 #define NODES 2
 
 
@@ -23,20 +24,21 @@ int main(int argc, char **argv)
 
 	MPI_Init(&argc, &argv);
 
-	int rank, num_procs, totalFrames = 0, my_frames = 0, remainder = 0, choice = 0;
+	int rank, num_procs, totalFrames = 0, my_frames = 0, remainder = 0, choice = 0, cuda_Flag = 0;
 	char input_path[64];
 	std::string output_path = "";
 	MPI_Status status;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-
+//printf("HELLO FROM BUILD %s %s, rank %d\n", __DATE__, __TIME__, rank);
+fflush(stdout);
 	std::string part = "part_" + std::to_string(rank) + ".mp4";
 	FILE *f = NULL;
 	unsigned char *buf = NULL;
 	long file_size = 0;
 
+
 	if(rank == 0){
-		start_time = time(NULL);
 
 		std::string input_file = "";
 		std::cout << "Please enter input name (include extension): ";
@@ -53,6 +55,15 @@ int main(int argc, char **argv)
 		std::cout << "Apply Filter\n1) \tGrayscale \n2) \tBlur Effect\n3) \tInvert Filter\n4) \tEdge Detection\n";
 		std::cout << "Choose a filter: ";
 		std::cin >> choice;
+		std::cout << "Do you want to use CUDA? ";
+		std::string cuda_Choice = "";
+		std::cin >> cuda_Choice;
+		if("yes" == cuda_Choice){
+			cuda_Flag = 1;
+		}
+		if(cuda_Flag){std::cout << "You are using CUDA!" << std::endl;}
+		else{std::cout << "You are NOT using CUDA :(" << std::endl;}
+
 	}
 
 	
@@ -76,10 +87,12 @@ int main(int argc, char **argv)
 		fseek(f, 0, SEEK_SET);
 	}
 
+
 	// Broadcast File Size
 	MPI_Bcast(&file_size, 1, MPI_LONG, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&choice, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&totalFrames, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&cuda_Flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	
 	MPI_Bcast(input_path, 64, MPI_CHAR, 0, MPI_COMM_WORLD);
@@ -92,23 +105,32 @@ int main(int argc, char **argv)
 	buf = (unsigned char *)malloc(file_size);
 	printf("filesize = %ld, Rank %d\n", file_size, rank);
 
+	MPI_Barrier(MPI_COMM_WORLD);
+
 	if (rank == 0)
 	{
+		start_time = time(NULL);
 		int r = fread(buf, 1, file_size, f);
 		printf("Successfully read %d\n", r);
 		printf("Frames: %d\n", totalFrames);
-		MPI_Send(buf, file_size, MPI_UNSIGNED_CHAR, 1, 123, MPI_COMM_WORLD);
-	}
+		MPI_Send(buf, file_size, MPI_UNSIGNED_CHAR, 1, 5, MPI_COMM_WORLD);
 
+		printf("Rank 0: after sending\n");
+		fflush(stdout);
+	}
+	
 	if (rank == 1)
 	{
-		MPI_Recv(buf, file_size, MPI_UNSIGNED_CHAR, 0, 123, MPI_COMM_WORLD, &status);
+		printf("Im here\n");
+		MPI_Recv(buf, file_size, MPI_UNSIGNED_CHAR, 0, 5, MPI_COMM_WORLD, &status);
 		FILE *out = fopen(input_path, "wb");
 		fwrite(buf, 1, file_size, out);
+		printf("Rank 1 Successfully recieved file\n");
 		fclose(out);
 
 	}
 
+	//printf("Stuck Here %d\n", rank);
 	MPI_Barrier(MPI_COMM_WORLD);
 
 	printf("Video Recieved all processes ready to go\n");
@@ -117,7 +139,8 @@ int main(int argc, char **argv)
 	cap.set(CAP_PROP_POS_FRAMES, start);
 	int frame_width = cap.get(CAP_PROP_FRAME_WIDTH);
 	int frame_height = cap.get(CAP_PROP_FRAME_HEIGHT);
-	unsigned char * pixels = (unsigned char *) malloc(frame_width * frame_height * 3);
+	//Size is the number of values- to get it in bytes is more
+	int size = frame_width * frame_height * 3;
 
 	Mat frame;
 	VideoWriter writer;
@@ -127,22 +150,100 @@ int main(int argc, char **argv)
 	writer.open(part, fourcc, fps, Size(frame_width, frame_height), true);
 
 
-	for(int i = start; i < end; i++){
+	//We need to alloc outside the loop
+	//unsigned char* d_frame;
+	//size_t size;
 
-		if(!cap.read(frame)){
-			break;
+	unsigned char* pixels[2];
+	unsigned char* pixels_device[2];
+	unsigned char* pixels_output[2];
+	cudaStream_t streams[2];
+	unsigned char *pixels_serial;
+	if (cuda_Flag){
+		for (int i = 0; i < 2; i++) {
+			cudaMallocHost(&pixels[i], size);          // pinned host
+			cudaMalloc(&pixels_device[i], size);    // device input
+			cudaMalloc(&pixels_output[i], size);   // device output
+			cudaStreamCreate(&streams[i]);
+		}
+	} else {
+		pixels_serial = (unsigned char*) malloc(size);
+	}
+	int buffer_index = 0;
+	int next_buffer = 0;
+	float time_device = 0;
+	time_t serial_time;
+	if(cuda_Flag){
+		/*
+		 * Double Buffering- making the CPU do work while the GPU does inputs
+		 * We initalized 2 streams (so the cpu doesnt get blocked) and each handles one of the two "buckets"
+		 * After we call the gpu, we ask the cpu to populate the next buffer (which is actually just flipping between buf 0 and 1)
+		 * We synch the streams and swap the buffers
+		*/
+		for (int i = start; i < end; i++) {
+			Mat frame;
+			if (!cap.read(frame)) break;
+			printf("Rank: %d\n", rank);
+			memcpy(pixels[buffer_index], frame.data, size);
+			time_device += process_frame_cuda(
+				choice,
+				pixels[buffer_index],
+				pixels_device[buffer_index],
+				pixels_output[buffer_index],
+				frame_width,
+				frame_height,
+				&streams[buffer_index]
+			);
+
+			next_buffer = 1 - buffer_index;
+
+			if (i > start) {
+				cudaStreamSynchronize(streams[next_buffer]);
+				Mat processed_frame(frame_height, frame_width, CV_8UC3, pixels[next_buffer]);
+				writer.write(processed_frame);
+			}
+
+			buffer_index = next_buffer;
 		}
 
-		memcpy(pixels, frame.data, frame_width * frame_height * 3);
-		if(apply_filter(choice, pixels, frame_width, frame_height) < -1) exit(-1);
-		Mat processed_frame(frame_height, frame_width, CV_8UC3, pixels);
+		cudaStreamSynchronize(streams[1 - buffer_index]);
+		Mat processed_frame(frame_height, frame_width, CV_8UC3, pixels[1 - buffer_index]);
 		writer.write(processed_frame);
+		for (int i = 0; i < 2; i++) {
+			cudaFreeHost(pixels[i]);
+			cudaFree(pixels_device[i]);
+			//cudaFree(pixels_device_out[i]);
+			cudaStreamDestroy(streams[i]);
+		}
 	}
-	MPI_Barrier(MPI_COMM_WORLD);
+	else{
+		for (int i = start; i < end; i++) {
+				if(!cap.read(frame)){
+					break;
+				}
+				memcpy(pixels_serial, frame.data, size);
+				if(apply_filter(choice, pixels_serial, frame_width, frame_height) < -1) exit(-1);
+				Mat processed_frame(frame_height, frame_width, CV_8UC3, pixels_serial);
+				writer.write(processed_frame);
 
+		}
+		serial_time = time(NULL);
+	}
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	float final_dev_time;
+	MPI_Reduce(&time_device, &final_dev_time, 1, MPI_FLOAT , MPI_SUM, 0, MPI_COMM_WORLD);
 	if(rank == 0){
 		time_t final_compute = time(NULL);
+
 		printf("Finished Processing All Frames %lds\n", final_compute-start_time);
+		if(cuda_Flag){
+			printf("Device Time: %.2f s\n", final_dev_time/1000.0);
+		}
+		else{
+			printf("Non-Cuda Time: %.2ld s\n", serial_time - start_time);
+		}
+
 	}
 	writer.release();
 	cap.release();
@@ -154,24 +255,24 @@ int main(int argc, char **argv)
 		f = fopen(part.c_str(), "rb");
 		fseek(f, 0, SEEK_END);
 		file_size = ftell(f);
-		printf("filesize = %ld\n", file_size);
+		//printf("filesize = %ld\n", file_size);
 		fseek(f, 0, SEEK_SET);
 		raw_part = (unsigned char*) malloc(file_size);
 		int r = fread(raw_part, 1, file_size, f);
-		printf("Successfully read %d\n", r);	
+		//printf("Successfully read %d\n", r);
 		MPI_Send(&file_size, 1, MPI_LONG, 0, 3, MPI_COMM_WORLD);
 		MPI_Send(raw_part, file_size, MPI_UNSIGNED_CHAR, 0, 4, MPI_COMM_WORLD);
 	}
 
 	long other_size = 0;
 	if(rank == 0){
-		for(int i = 1; i < num_procs; i+=2){
+		for(int i = 1; i < num_procs; i+= 2){
 			MPI_Recv(&other_size, 1, MPI_LONG, i, 3, MPI_COMM_WORLD, &status);
-			printf("Recieved total file size for Rank %d\n", i);
-			raw_part = (unsigned char *) malloc(other_size);			
+			//printf("Recieved total file size for Rank %d\n", i);
+			raw_part = (unsigned char *) malloc(other_size);
 			MPI_Recv(raw_part, other_size, MPI_UNSIGNED_CHAR, i, 4, MPI_COMM_WORLD, &status);
-			printf("Recieved in buffer for Rank %d\n", i);
-			std::string output = "part_" + std::to_string(i) + ".mp4"; 
+			//printf("Recieved in buffer for Rank %d\n", i);
+			std::string output = "part_" + std::to_string(i) + ".mp4";
 			FILE *out = fopen(output.c_str(), "wb");
 			fwrite(raw_part, 1, other_size, out);
 			fclose(out);
@@ -185,7 +286,7 @@ int main(int argc, char **argv)
 		FILE* l = fopen("lists.txt", "w");
 		fprintf(l, "ffconcat version 1.0\n");
 		for(int i = 0; i < num_procs; i++){
-			fprintf(l, "file 'part_%d.mp4'\n", i);
+			fprintf(l, "file 'part_%d.mp4'\n", i);///home/gpgpup/project/CS455-Project/mpi-version/
 
 		}
 		fclose(l);
@@ -209,7 +310,7 @@ int main(int argc, char **argv)
 
 		end_time = time(NULL);
 
-		printf("%ld\n", end_time-start_time);
+		printf("Final Time: %ld\n", end_time-start_time);
 
 	}
 
@@ -218,8 +319,8 @@ int main(int argc, char **argv)
 	if(rank == 0){
 		remove("lists.txt");
 		for(int i = 0; i < num_procs; i++){
-			sprintf(path, "part_%d.mp4", i);	
-			remove(path);		
+			sprintf(path, "part_%d.mp4", i);
+			remove(path);
 
 		}
 	}
@@ -233,7 +334,6 @@ int main(int argc, char **argv)
 
 		}
 	}
-
 
 
 	MPI_Finalize();
