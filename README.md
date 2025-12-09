@@ -19,16 +19,17 @@ This project implements a distributed video processing pipeline with four execut
 
 ## Benchmark
 ### Serial Implementation
-<img width="876" height="541" alt="serial_grayscale_5min" src="https://github.com/user-attachments/assets/7715a0a4-6d9a-443f-9c4f-b137235a7707" />
+<img src="https://github.com/user-attachments/assets/7715a0a4-6d9a-443f-9c4f-b137235a7707" width="720" />
 
 ### MPI Implementation
-<img width="896" height="519" alt="mpi_grayscale_5min" src="https://github.com/user-attachments/assets/4c14a38a-d1de-438a-b320-3af34b744a81" />
+<img src="https://github.com/user-attachments/assets/4c14a38a-d1de-438a-b320-3af34b744a81" width="720" />
 
 ### CUDA Implementation
-<img width="876" height="541" alt="cuda_grayscale_5min" src="https://github.com/user-attachments/assets/6b240683-280c-4e71-8099-1bce628746de" />
+<img src="https://github.com/user-attachments/assets/6b240683-280c-4e71-8099-1bce628746de" width="720" />
 
 ### CUDA + MPI Implementation
-<img width="886" height="497" alt="cuda_mpi-5min" src="https://github.com/user-attachments/assets/4c1c3714-2143-450e-888b-fd168c07a367" />
+<img src="https://github.com/user-attachments/assets/4c1c3714-2143-450e-888b-fd168c07a367" width="720" />
+
 
 As expected, the serial implementation was the slowest, with the MPI CPU implementation providing a noticeable speedup. The standalone CUDA version outperformed MPI due to GPU acceleration. In the hybrid CUDA + MPI mode, the additional MPI communication overhead introduced a slight slowdown compared to CUDA alone, though the difference remained small.
 
